@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Access code{% endblock %}
+{% block content %}
+<div class="panel narrow">
+  <h1 style="margin-bottom:6px">Attendance device</h1>
+  <p class="muted" style="margin-bottom:22px">Enter the access code your administrator gave you.</p>
+  <form method="post" class="form">
+    <label>Access code <input type="password" name="code" required autofocus autocomplete="off"></label>
+    <button class="btn" type="submit">Continue</button>
+  </form>
+</div>
+{% endblock %}

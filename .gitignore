@@ -1,0 +1,10 @@
+.git-ai-attendance/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+.secret_key
+backend/.secret_key
+backend/attendance.db

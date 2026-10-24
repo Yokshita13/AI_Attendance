@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Reports</h1><p>Daily lists and monthly percentages. Both download as CSV.</p></div></div>
+
+<section class="panel">
+  <div class="page-head" style="margin-bottom:14px">
+    <h2>Daily report</h2>
+    <form class="inline" method="get">
+      <input type="hidden" name="month" value="{{ month }}">
+      <input type="date" name="date" value="{{ date }}" aria-label="Report date" onchange="this.form.submit()">
+      <a class="btn small ghost" href="{{ url_for('daily_csv', date=date) }}">Download CSV</a>
+    </form>
+  </div>
+  <div class="split">
+    <div><h3 style="margin-bottom:8px">Present ({{ present|length }})</h3>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Roll no</th><th>Name</th><th>Time</th></tr></thead><tbody>
+      {% for r in present %}<tr><td>{{ r.roll_no }}</td><td>{{ r.name }}</td><td>{{ r.time[:5] }}</td></tr>
+      {% else %}<tr><td colspan="3" class="empty-cell">No one was marked present.</td></tr>{% endfor %}</tbody></table></div></div>
+    <div><h3 style="margin-bottom:8px">Absent ({{ absent|length }})</h3>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Roll no</th><th>Name</th><th>Department</th></tr></thead><tbody>
+      {% for r in absent %}<tr><td>{{ r.roll_no }}</td><td>{{ r.name }}</td><td>{{ r.department }}</td></tr>
+      {% else %}<tr><td colspan="3" class="empty-cell">No one is absent.</td></tr>{% endfor %}</tbody></table></div></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="page-head" style="margin-bottom:6px">
+    <h2>Monthly report</h2>
+    <form class="inline" method="get">
+      <input type="hidden" name="date" value="{{ date }}">
+      <input type="month" name="month" value="{{ month }}" aria-label="Report month" onchange="this.form.submit()">
+      <a class="btn small ghost" href="{{ url_for('monthly_csv', month=month) }}">Download CSV</a>
+    </form>
+  </div>
+  <p class="muted" style="margin-bottom:12px">Attendance was taken on {{ total_days }} day{{ '' if total_days == 1 else 's' }} this month. Green means 75% or more.</p>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Roll no</th><th>Name</th><th>Department</th><th>Days present</th><th>Percentage</th></tr></thead>
+    <tbody>
+    {% for r in summary %}
+      <tr><td>{{ r.roll_no }}</td><td>{{ r.name }}</td><td>{{ r.department }}</td>
+          <td>{{ r.present_days }} of {{ r.total_days }}</td>
+          <td><span class="pill {{ 'ok' if r.percentage >= 75 else 'bad' }}">{{ r.percentage }}%</span></td></tr>
+    {% else %}<tr><td colspan="5" class="empty-cell">No students registered yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

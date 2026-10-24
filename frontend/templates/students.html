@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Students{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Students</h1><p>{{ students|length }} registered</p></div>
+  <a class="btn" href="{{ url_for('register') }}">Register a student</a></div>
+<section class="panel">
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Roll no</th><th>Name</th><th>Department</th><th>Registered on</th><th></th></tr></thead>
+    <tbody>
+    {% for s in students %}
+      <tr><td>{{ s.roll_no }}</td><td><b>{{ s.name }}</b></td><td>{{ s.department }}</td>
+          <td>{{ s.created_at[:10] }}</td>
+          <td><form method="post" action="{{ url_for('delete_student', student_id=s.id) }}"
+                    onsubmit="return confirm('Delete {{ s.name|e }} and all their attendance records? This cannot be undone.')">
+              <button class="btn danger small">Delete</button></form></td></tr>
+    {% else %}
+      <tr><td colspan="5" class="empty-cell">No students yet. Use “Register a student” to add the first one.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

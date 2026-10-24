@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Today</h1><p>{{ today }}</p></div>
+  <a class="btn" href="{{ url_for('scan') }}">Take attendance</a></div>
+
+<section class="hero">
+  {% if stats.total %}
+    <p class="today-line"><b>{{ stats.present }}</b> of {{ stats.total }} students are in.</p>
+    <div class="split-bar" role="img" aria-label="{{ stats.present }} present, {{ stats.absent }} absent">
+      <i style="width: {{ stats.rate }}%"></i>
+    </div>
+    <div class="legend"><span>{{ stats.present }} present ({{ stats.rate }}%)</span><span class="absent">{{ stats.absent }} absent</span></div>
+  {% else %}
+    <p class="today-line">No students yet.</p>
+    <p class="muted" style="margin:12px 0 18px">Register your first student to start taking attendance.</p>
+    <a class="btn" href="{{ url_for('register') }}">Register a student</a>
+  {% endif %}
+</section>
+
+<div class="split">
+  <section class="panel">
+    <h2>Checked in today</h2>
+    <ul class="ledger">
+      {% for r in recent %}
+        <li><time>{{ r.time[:5] }}</time><span class="roll">{{ r.roll_no }}</span><span class="name">{{ r.name }}</span></li>
+      {% else %}<li class="empty">No one has checked in yet today.</li>{% endfor %}
+    </ul>
+  </section>
+  <section class="panel">
+    <h2>Recent days</h2>
+    {% set peak = (stats.trend | map(attribute='n') | max) if stats.trend else 1 %}
+    {% if stats.trend %}
+    <div class="days">
+      {% for d in stats.trend %}
+        <div class="day"><div class="col" style="height: {{ ((d.n / peak) * 100) | round }}%"></div><b>{{ d.n }}</b><small>{{ d.date[8:] }}/{{ d.date[5:7] }}</small></div>
+      {% endfor %}
+    </div>
+    {% else %}<p class="empty">Days will appear here once attendance has been taken.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}
