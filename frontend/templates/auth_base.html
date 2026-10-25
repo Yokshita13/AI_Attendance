@@ -1,0 +1,56 @@
+{% from "_icons.html" import icon, logo %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Welcome{% endblock %} · SmartAttend</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="auth {% block auth_class %}{% endblock %}">
+  <aside class="auth-hero">
+    <a class="brand" href="{{ url_for('scan') }}">{{ logo() }}<span><b>SmartAttend</b><small>AI Based Smart Attendance System</small></span></a>
+    <div class="hero-copy">
+      <h1>{% block hero_title %}Smarter Attendance, A Brighter Future{% endblock %}</h1>
+      <p>{% block hero_text %}AI-powered face recognition for fast, secure and hassle-free attendance management.{% endblock %}</p>
+      <ul class="points">
+        <li>{{ icon('bolt') }}<div><b>Automatic</b><span>No manual work</span></div></li>
+        <li>{{ icon('target') }}<div><b>Accurate</b><span>Prevents proxy attendance</span></div></li>
+        <li>{{ icon('shield') }}<div><b>Secure</b><span>Your data stays protected</span></div></li>
+      </ul>
+    </div>
+    <svg class="scan-art" viewBox="0 0 220 220" fill="none" aria-hidden="true">
+      <g stroke="#9fa8ff" stroke-width="3" stroke-linecap="round">
+        <path d="M18 62V34a16 16 0 0 1 16-16h28M158 18h28a16 16 0 0 1 16 16v28M202 158v28a16 16 0 0 1-16 16h-28M62 202H34a16 16 0 0 1-16-16v-28"/>
+      </g>
+      <g stroke="#b9c0ff" stroke-width="1.6" opacity=".9">
+        <ellipse cx="110" cy="112" rx="48" ry="62"/>
+        <path d="M70 92c10-8 20-11 40-11s30 3 40 11M64 118c14 4 28 6 46 6s32-2 46-6M74 146c10 8 22 12 36 12s26-4 36-12"/>
+        <path d="M110 50v124M86 66c-6 28-6 56 0 84M134 66c6 28 6 56 0 84"/>
+        <ellipse cx="92" cy="104" rx="7" ry="3.500"/><ellipse cx="128" cy="104" rx="7" ry="3.500"/>
+        <path d="M110 108v22M100 138c6 5 14 5 20 0"/>
+      </g>
+      <g fill="#d6dbff">
+        <circle cx="110" cy="50" r="3"/><circle cx="70" cy="92" r="3"/><circle cx="150" cy="92" r="3"/><circle cx="64" cy="118" r="3"/><circle cx="156" cy="118" r="3"/>
+        <circle cx="110" cy="124" r="3"/><circle cx="74" cy="146" r="3"/><circle cx="146" cy="146" r="3"/><circle cx="110" cy="174" r="3"/><circle cx="86" cy="66" r="3"/><circle cx="134" cy="66" r="3"/>
+      </g>
+    </svg>
+  </aside>
+  <main class="auth-main">
+    <div class="auth-top">{% block top_link %}{% endblock %}</div>
+    <div class="auth-card">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}<div class="flash {{ cat }}" role="status" style="margin-bottom:18px">{{ msg }}</div>{% endfor %}
+      {% endwith %}
+      {% block card %}{% endblock %}
+    </div>
+    <p class="auth-foot">© 2026 SmartAttend. All rights reserved.</p>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='ui.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
