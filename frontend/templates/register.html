@@ -1,70 +1,64 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Register student{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Register a student</h1>
-  <p>Capture about 8 seconds of video so the system can learn the face.</p></div></div>
+  <p>Capture about 8 seconds of video so the system can learn the face. Students you register here are approved straight away.</p></div></div>
 <div class="split">
   <section class="panel">
     <form id="form" class="form">
-      <label>Roll number <input id="roll" required autocomplete="off"></label>
-      <label>Full name <input id="name" required autocomplete="off"></label>
-      <label>Department or class <input id="dept" autocomplete="off"></label>
-      <button class="btn" id="go" type="submit">Start capture</button>
+      <div class="field"><label for="name">Full name</label>
+        <div class="control">{{ icon('user') }}<input id="name" placeholder="Enter the student's full name" required autocomplete="off"></div></div>
+      <div class="field"><label for="roll">Roll number</label>
+        <div class="control">{{ icon('id') }}<input id="roll" placeholder="Enter the roll number" required autocomplete="off"></div></div>
+      <div class="field"><label for="dept">Department or class</label>
+        <div class="control">{{ icon('cap') }}<input id="dept" placeholder="For example, BCA 2nd year" autocomplete="off"></div></div>
+      <button class="btn block" id="go" type="submit">Start capture</button>
     </form>
-    <p class="hint">Keep your face well lit and slowly turn your head a little to the left and right. Remove masks and sunglasses.</p>
+    <p class="hint">Keep the face well lit and slowly turn the head a little to the left and right. Remove masks and sunglasses.</p>
     <div id="msg" class="notice" hidden role="status"></div>
   </section>
-  <section class="panel">
-    <div class="stage">
-      <div class="portal" id="portal" data-state="idle" style="--p:100">
-        <div class="portal-view"><video id="video" autoplay playsinline muted></video></div>
-      </div>
-      <div class="verdict"><p id="count">Fill in the details, then start the capture.</p></div>
-    </div>
-  </section>
+  <div class="cam" id="cam" data-state="idle">
+    <div class="cam-view"><video id="video" autoplay playsinline muted></video><i class="frame"></i><span class="live">Live</span></div>
+    <div class="meter"><i id="meter"></i></div>
+    <div class="cam-bar">{{ icon('camera') }}<span id="count">Fill in the details, then start the capture.</span></div>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='camera.js') }}"></script>
 <script>
 const TOTAL = 20, GAP_MS = 400;
-const video = document.getElementById('video'), portal = document.getElementById('portal');
-const msg = document.getElementById('msg'), count = document.getElementById('count');
-const go = document.getElementById('go');
+const $ = id => document.getElementById(id);
+const video = $('video'), cam = $('cam'), msg = $('msg'), count = $('count'), go = $('go');
 function show(t, cls) { msg.hidden = false; msg.textContent = t; msg.className = 'notice ' + cls; }
 
 Cam.start(video).catch(() => show('Camera is blocked. Allow camera access in the address bar and reload.', 'bad'));
 
-document.getElementById('form').addEventListener('submit', async e => {
+$('form').addEventListener('submit', async e => {
   e.preventDefault();
-  go.disabled = true; msg.hidden = true;
-  portal.dataset.state = 'ok';
+  go.disabled = true; msg.hidden = true; cam.dataset.state = 'ok';
   const images = [];
   for (let i = 0; i < TOTAL; i++) {
     images.push(Cam.grab(video, 0.9));
-    portal.style.setProperty('--p', ((i + 1) / TOTAL * 100).toFixed(0));
-    count.textContent = `Captured ${i + 1} of ${TOTAL}. Keep your face in the circle.`;
+    $('meter').style.width = ((i + 1) / TOTAL * 100) + '%';
+    count.textContent = `Captured ${i + 1} of ${TOTAL}. Keep the face inside the frame.`;
     await new Promise(r => setTimeout(r, GAP_MS));
   }
   count.textContent = 'Saving and training the model…';
   const res = await fetch('/api/register', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      roll_no: document.getElementById('roll').value, name: document.getElementById('name').value,
-      department: document.getElementById('dept').value, images
-    })
+    body: JSON.stringify({ roll_no: $('roll').value, name: $('name').value, department: $('dept').value, images })
   });
   const d = await res.json();
   if (res.ok) {
     show(`Registered with ${d.samples} face samples.`, 'ok');
-    count.textContent = 'Done. You can register the next student.';
-    e.target.reset();
+    count.textContent = 'Done. You can register the next student.'; e.target.reset();
   } else {
     show(d.error || 'Registration failed. Try again.', 'bad');
-    portal.dataset.state = 'bad';
-    count.textContent = 'Nothing was saved.';
+    cam.dataset.state = 'bad'; count.textContent = 'Nothing was saved.';
   }
-  setTimeout(() => { portal.dataset.state = 'idle'; portal.style.setProperty('--p', 100); }, 2500);
+  setTimeout(() => { cam.dataset.state = 'idle'; $('meter').style.width = '0'; }, 2500);
   go.disabled = false;
 });
 </script>
