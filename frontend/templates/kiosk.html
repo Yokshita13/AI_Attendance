@@ -1,12 +1,15 @@
-{% extends "base.html" %}
+{% extends "auth_base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Access code{% endblock %}
-{% block content %}
-<div class="panel narrow">
-  <h1 style="margin-bottom:6px">Attendance device</h1>
-  <p class="muted" style="margin-bottom:22px">Enter the access code your administrator gave you.</p>
+{% block hero_title %}Attendance device{% endblock %}
+{% block hero_text %}This device needs an access code from your administrator before it can mark attendance.{% endblock %}
+{% block card %}
+  <h1>Enter access code</h1>
+  <p class="lead">Ask your administrator for the code for this device.</p>
   <form method="post" class="form">
-    <label>Access code <input type="password" name="code" required autofocus autocomplete="off"></label>
-    <button class="btn" type="submit">Continue</button>
+    <div class="field"><label for="c">Access code</label>
+      <div class="control">{{ icon('lock') }}<input id="c" type="password" name="code" placeholder="Enter the access code" required autofocus autocomplete="off">
+        <button class="eye" type="button" data-for="c" aria-label="Show code">{{ icon('eye') }}</button></div></div>
+    <button class="btn block" type="submit">Continue</button>
   </form>
-</div>
 {% endblock %}
