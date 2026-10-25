@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS students (
     roll_no TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     department TEXT DEFAULT '',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    password_hash TEXT,                              -- NULL = student has no login
+    status TEXT NOT NULL DEFAULT 'approved'          -- 'pending' (self sign-up) or 'approved'
 );
 
 CREATE TABLE IF NOT EXISTS attendance (
@@ -56,6 +58,12 @@ def get_db():
 def init_db():
     with get_db() as db:
         db.executescript(SCHEMA)
+        # Upgrade databases created before student accounts existed.
+        cols = {r["name"] for r in db.execute("PRAGMA table_info(students)")}
+        if "password_hash" not in cols:
+            db.execute("ALTER TABLE students ADD COLUMN password_hash TEXT")
+        if "status" not in cols:
+            db.execute("ALTER TABLE students ADD COLUMN status TEXT NOT NULL DEFAULT 'approved'")
         if db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0:
             user = os.environ.get("ADMIN_USER", "admin")
             pwd = os.environ.get("ADMIN_PASSWORD")
@@ -70,11 +78,13 @@ def init_db():
 
 
 # ---------- students ----------
-def add_student(roll_no, name, department=""):
+def add_student(roll_no, name, department="", password_hash=None, status="approved"):
     with get_db() as db:
         cur = db.execute(
-            "INSERT INTO students (roll_no, name, department, created_at) VALUES (?,?,?,?)",
-            (roll_no, name, department, datetime.now().isoformat(timespec="seconds")),
+            "INSERT INTO students (roll_no, name, department, created_at, password_hash, status)"
+            " VALUES (?,?,?,?,?,?)",
+            (roll_no, name, department, datetime.now().isoformat(timespec="seconds"),
+             password_hash, status),
         )
         return cur.lastrowid
 
@@ -89,9 +99,27 @@ def get_student_by_roll(roll_no):
         return db.execute("SELECT * FROM students WHERE roll_no=?", (roll_no,)).fetchone()
 
 
-def list_students():
+def list_students(status=None):
     with get_db() as db:
+        if status:
+            return db.execute("SELECT * FROM students WHERE status=? ORDER BY created_at DESC, roll_no",
+                              (status,)).fetchall()
         return db.execute("SELECT * FROM students ORDER BY roll_no").fetchall()
+
+
+def approved_ids():
+    with get_db() as db:
+        return [r["id"] for r in db.execute("SELECT id FROM students WHERE status='approved'")]
+
+
+def pending_count():
+    with get_db() as db:
+        return db.execute("SELECT COUNT(*) FROM students WHERE status='pending'").fetchone()[0]
+
+
+def set_status(student_id, status):
+    with get_db() as db:
+        db.execute("UPDATE students SET status=? WHERE id=?", (status, student_id))
 
 
 def delete_student(student_id):
@@ -131,7 +159,8 @@ def absentees_for_date(date):
     with get_db() as db:
         return db.execute(
             """SELECT roll_no, name, department FROM students
-               WHERE id NOT IN (SELECT student_id FROM attendance WHERE date=?)
+               WHERE status='approved'
+                 AND id NOT IN (SELECT student_id FROM attendance WHERE date=?)
                ORDER BY roll_no""",
             (date,),
         ).fetchall()
@@ -150,6 +179,7 @@ def monthly_summary(month):
                FROM students s
                LEFT JOIN attendance a
                  ON a.student_id = s.id AND a.date LIKE ?
+               WHERE s.status = 'approved'
                GROUP BY s.id ORDER BY s.roll_no""",
             (month + "-%",),
         ).fetchall()
@@ -163,7 +193,7 @@ def monthly_summary(month):
 def dashboard_stats():
     today = datetime.now().strftime("%Y-%m-%d")
     with get_db() as db:
-        total = db.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+        total = db.execute("SELECT COUNT(*) FROM students WHERE status='approved'").fetchone()[0]
         present = db.execute(
             "SELECT COUNT(*) FROM attendance WHERE date=?", (today,)
         ).fetchone()[0]
@@ -177,4 +207,31 @@ def dashboard_stats():
         "absent": max(total - present, 0),
         "rate": round(100 * present / total, 1) if total else 0.0,
         "trend": [dict(r) for r in reversed(trend)],
+        "pending": pending_count(),
     }
+
+
+# ---------- per-student views ----------
+def student_today(student_id):
+    d = datetime.now().strftime("%Y-%m-%d")
+    with get_db() as db:
+        row = db.execute("SELECT time FROM attendance WHERE student_id=? AND date=?",
+                         (student_id, d)).fetchone()
+    return row["time"] if row else None
+
+
+def student_history(student_id, limit=31):
+    with get_db() as db:
+        return [dict(r) for r in db.execute(
+            "SELECT date, time FROM attendance WHERE student_id=? ORDER BY date DESC LIMIT ?",
+            (student_id, limit))]
+
+
+def student_month(student_id, month):
+    """(days present, days attendance was taken) for one student in 'YYYY-MM'."""
+    with get_db() as db:
+        total = db.execute("SELECT COUNT(DISTINCT date) FROM attendance WHERE date LIKE ?",
+                           (month + "-%",)).fetchone()[0]
+        present = db.execute("SELECT COUNT(*) FROM attendance WHERE student_id=? AND date LIKE ?",
+                             (student_id, month + "-%")).fetchone()[0]
+    return present, total
