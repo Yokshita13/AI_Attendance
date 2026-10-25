@@ -120,14 +120,45 @@ class LBPHModel:
 
 
 # ---------- model ----------
-def train():
-    """Retrain the LBPH model from every image in dataset/<student_id>/."""
+# ---------- model ----------
+def sample_path(student_id):
+    """Path of a middle face sample (used so an admin can check a pending sign-up), or None."""
+    folder = os.path.join(DATASET_DIR, str(student_id))
+    if not os.path.isdir(folder):
+        return None
+    files = sorted(os.listdir(folder))
+    return os.path.join(folder, files[len(files) // 2]) if files else None
+
+
+def match_among(face, student_ids):
+    """True if `face` matches any stored sample of the given students (used to catch the same
+    face being submitted twice among pending sign-ups). Pending sets are small, so no caching."""
+    images, labels = [], []
+    for sid in student_ids:
+        folder = os.path.join(DATASET_DIR, str(sid))
+        if not os.path.isdir(folder):
+            continue
+        for fn in os.listdir(folder):
+            img = cv2.imread(os.path.join(folder, fn), cv2.IMREAD_GRAYSCALE)
+            if img is not None:
+                images.append(img)
+                labels.append(int(sid))
+    if not images:
+        return False
+    _, distance = LBPHModel.fit(images, labels).predict(face)
+    return distance <= CONFIDENCE_THRESHOLD
+
+
+def train(allowed_ids=None):
+    """Retrain the LBPH model from dataset/<student_id>/ (only ids in allowed_ids if given)."""
     global _recognizer
     images, labels = [], []
     if os.path.isdir(DATASET_DIR):
         for sid in os.listdir(DATASET_DIR):
             folder = os.path.join(DATASET_DIR, sid)
             if not (sid.isdigit() and os.path.isdir(folder)):
+                continue
+            if allowed_ids is not None and int(sid) not in allowed_ids:
                 continue
             for fn in os.listdir(folder):
                 img = cv2.imread(os.path.join(folder, fn), cv2.IMREAD_GRAYSCALE)
