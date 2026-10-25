@@ -1,41 +1,58 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Take attendance{% endblock %}
 {% block content %}
-<div class="split">
-  <section class="panel">
-    <div class="stage">
-      <div class="portal" id="portal" data-state="idle">
-        <div class="portal-view"><video id="video" autoplay playsinline muted></video></div>
-      </div>
-      <div class="verdict" id="verdict" aria-live="polite">
-        <h2 id="who">Starting camera</h2>
-        <p id="sub">Allow camera access when your browser asks.</p>
-      </div>
+<div class="page-head"><div><h1>Take attendance</h1>
+  <p>Position yourself in front of the camera. The system detects and recognises your face automatically.</p></div></div>
+
+<div class="scan-grid">
+  <div class="cam" id="cam" data-state="idle">
+    <div class="cam-view"><video id="video" autoplay playsinline muted></video><i class="frame"></i><span class="live">Live</span></div>
+    <div class="cam-bar">{{ icon('camera') }}<span id="camnote">Starting camera…</span></div>
+  </div>
+
+  <section class="result" id="result" data-state="idle" aria-live="polite">
+    <div class="result-head">
+      <span class="seal">{{ icon('scan', 'i-idle') }}{{ icon('check', 'i-ok') }}{{ icon('info', 'i-warn') }}{{ icon('x', 'i-bad') }}</span>
+      <div><h2 id="who">Starting camera</h2><p id="sub">Allow camera access when your browser asks.</p></div>
+    </div>
+    <div class="result-body" id="detail" hidden>
+      <div class="person"><span class="avatar" id="avatar"></span>
+        <div><b id="pname"></b><span id="proll"></span><span id="pdept"></span></div></div>
+      <div class="when">{{ icon('calendar') }}<span>Date and time</span><b id="pwhen"></b></div>
+      <div class="banner" id="banner"></div>
     </div>
   </section>
-
-  <section class="panel">
-    <h2>Marked present today</h2>
-    <ul class="ledger" id="today"></ul>
-  </section>
 </div>
+
+<section class="panel">
+  <h2>Marked present today</h2>
+  <ul class="ledger" id="today"></ul>
+</section>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='camera.js') }}"></script>
 <script>
-const video = document.getElementById('video');
-const portal = document.getElementById('portal');
-const verdict = document.getElementById('verdict');
-const who = document.getElementById('who'), sub = document.getElementById('sub');
-const list = document.getElementById('today');
+const $ = id => document.getElementById(id);
+const video = $('video'), cam = $('cam'), result = $('result'), list = $('today');
 let busy = false, cooldownUntil = 0, freshRoll = null;
 
-function show(state, title, text) {
-  portal.dataset.state = state;
-  verdict.className = 'verdict ' + (state === 'idle' ? '' : state);
-  who.textContent = title; sub.textContent = text || '';
-}
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const initials = n => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+function clock(t) { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; }
+function when(t) { return new Date().toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) + ' · ' + clock(t); }
+
+function show(state, title, text, p) {
+  result.dataset.state = state; cam.dataset.state = state;
+  $('who').textContent = title; $('sub').textContent = text || '';
+  $('detail').hidden = !p;
+  if (p) {
+    $('avatar').textContent = initials(p.name); $('pname').textContent = p.name;
+    $('proll').textContent = p.roll_no; $('pdept').textContent = p.department || '';
+    $('pwhen').textContent = when(p.time); $('banner').textContent = p.banner;
+  }
+  $('camnote').textContent = state === 'bad' ? 'Camera active · face not recognised' : 'Camera active';
+}
 
 async function refreshToday() {
   const rows = await (await fetch('/api/today')).json();
@@ -57,17 +74,17 @@ async function tick() {
     switch (d.status) {
       case 'marked':
         freshRoll = d.roll_no;
-        show('ok', d.name, `Marked present at ${d.time.slice(0, 5)}.`);
+        show('ok', 'Face recognised!', `Welcome back, ${d.name}.`, {...d, banner: 'Attendance marked successfully'});
         cooldownUntil = Date.now() + 4000; refreshToday(); break;
       case 'already':
-        show('warn', d.name, `You were already marked today at ${d.time.slice(0, 5)}.`);
+        show('warn', 'Already marked today', `${d.name}, you were marked earlier.`, {...d, banner: 'No need to scan again'});
         cooldownUntil = Date.now() + 4000; break;
       case 'unknown':
         show('bad', 'Face not recognised', 'Move closer and face the camera. If this keeps happening, ask your administrator to register you.'); break;
       case 'no_model':
         show('warn', 'No students registered', 'An administrator needs to register students first.'); break;
       case 'no_face':
-        show('idle', 'Looking for a face', 'Stand about an arm\u2019s length from the camera.'); break;
+        show('idle', 'Looking for a face', 'Stand about an arm’s length from the camera.'); break;
       default: show('bad', 'Could not read the camera image', 'Reload the page and try again.');
     }
   } catch (e) { show('bad', 'Cannot reach the server', 'Check your internet connection.'); }
@@ -75,7 +92,7 @@ async function tick() {
 }
 
 Cam.start(video)
-  .then(() => { show('idle', 'Looking for a face', 'Stand about an arm\u2019s length from the camera.'); setInterval(tick, 1200); refreshToday(); })
+  .then(() => { show('idle', 'Looking for a face', 'Stand about an arm’s length from the camera.'); setInterval(tick, 1200); refreshToday(); setInterval(refreshToday, 5000); })
   .catch(() => show('bad', 'Camera is blocked', 'Allow camera access in the address bar, then reload. The page must be opened over HTTPS.'));
 </script>
 {% endblock %}
