@@ -4,12 +4,14 @@ import hmac
 import io
 import os
 import secrets
+import time
 from datetime import datetime
 from functools import wraps
 
-from flask import (Flask, Response, flash, jsonify, redirect, render_template,
-                   request, session, url_for)
-from werkzeug.security import check_password_hash
+from flask import (Flask, Response, abort, flash, jsonify, redirect, render_template,
+                   request, send_file, session, url_for)
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import check_password_hash, generate_password_hash
 
 import database as db
 import face_engine as fe
@@ -19,6 +21,8 @@ DATA_DIR = os.environ.get("DATA_DIR", BASE_DIR)
 PRODUCTION = os.environ.get("PRODUCTION") == "1"
 # Optional: if set, only devices that know this code (or logged-in admins) can mark attendance.
 KIOSK_CODE = os.environ.get("KIOSK_CODE", "")
+# Students may create their own account (face + password); an admin must approve it.
+SIGNUP_ENABLED = os.environ.get("SIGNUP_ENABLED", "1") == "1"
 
 
 def _secret_key():
@@ -42,6 +46,8 @@ app = Flask(
     template_folder=os.path.join(FRONTEND_DIR, "templates"),
     static_folder=os.path.join(FRONTEND_DIR, "static"),
 )
+if PRODUCTION:  # behind the host's HTTPS proxy: trust its forwarded IP / scheme headers
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 app.secret_key = _secret_key()
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -56,6 +62,26 @@ fe.load_model()
 
 MIN_SAMPLES = 10
 
+# ---- simple in-memory rate limiting (fine with a single worker) ----
+_attempts = {}
+
+
+def too_many(key, limit, window):
+    now = time.time()
+    recent = [t for t in _attempts.get(key, []) if now - t < window]
+    _attempts[key] = recent
+    return len(recent) >= limit
+
+
+def record(key):
+    _attempts.setdefault(key, []).append(time.time())
+
+
+@app.context_processor
+def inject_globals():
+    pending = db.pending_count() if session.get("admin") else 0
+    return {"pending_count": pending, "signup_enabled": SIGNUP_ENABLED}
+
 
 def login_required(view):
     @wraps(view)
@@ -65,6 +91,19 @@ def login_required(view):
                 return jsonify(error="Login required"), 401
             return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
+    return wrapped
+
+
+def student_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        student = db.get_student(session["student"]) if session.get("student") else None
+        if student is None:
+            session.pop("student", None)
+            if request.path.startswith("/api/"):
+                return jsonify(error="Sign in required"), 401
+            return redirect(url_for("student_login"))
+        return view(student, *args, **kwargs)
     return wrapped
 
 
@@ -100,15 +139,21 @@ def healthz():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        key = ("admin", request.remote_addr)
+        if too_many(key, 5, 300):
+            flash("Too many failed attempts. Wait 5 minutes and try again.", "error")
+            return render_template("login.html"), 429
         with db.get_db() as conn:
             row = conn.execute(
                 "SELECT * FROM admins WHERE username=?", (request.form.get("username", ""),)
             ).fetchone()
         if row and check_password_hash(row["password_hash"], request.form.get("password", "")):
+            _attempts.pop(key, None)
             session["admin"] = row["username"]
             session.permanent = True
             nxt = request.args.get("next", "")
             return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("dashboard"))
+        record(key)
         flash("Invalid username or password", "error")
     return render_template("login.html")
 
@@ -140,7 +185,7 @@ def api_recognize():
         return jsonify(result)
 
     student = db.get_student(result["student_id"])
-    if student is None:  # stale model entry for a deleted student
+    if student is None or student["status"] != "approved":  # stale model entry
         return jsonify(status="unknown")
     marked, time_str = db.mark_attendance(student["id"], result["confidence"])
     return jsonify(
@@ -177,7 +222,7 @@ def dashboard():
 @app.route("/students")
 @login_required
 def students():
-    return render_template("students.html", students=db.list_students())
+    return render_template("students.html", students=[s for s in db.list_students() if s["status"] == "approved"])
 
 
 @app.route("/students/<int:student_id>/delete", methods=["POST"])
@@ -185,7 +230,7 @@ def students():
 def delete_student(student_id):
     db.delete_student(student_id)
     fe.delete_samples(student_id)
-    fe.train()
+    fe.train(db.approved_ids())
     flash("Student removed and model retrained.", "ok")
     return redirect(url_for("students"))
 
@@ -227,10 +272,172 @@ def api_register():
         if other:
             return jsonify(error=f"This face already matches {other['name']} ({other['roll_no']})."), 409
 
-    sid = db.add_student(roll_no, name, department)
+    password = data.get("password") or ""
+    if password and len(password) < 8:
+        return jsonify(error="A student password must be at least 8 characters."), 400
+    sid = db.add_student(roll_no, name, department,
+                         password_hash=generate_password_hash(password) if password else None)
     fe.save_samples(sid, faces)
-    fe.train()
+    fe.train(db.approved_ids())
     return jsonify(ok=True, student_id=sid, samples=len(faces))
+
+
+# ---------------- student accounts ----------------
+def _face_crops(images):
+    faces = []
+    for url in images:
+        try:
+            face = fe.extract_face(fe.decode_image(url))
+        except Exception:
+            continue
+        if face is not None:
+            faces.append(face)
+    return faces
+
+
+@app.route("/signup")
+def signup():
+    if not SIGNUP_ENABLED:
+        abort(404)
+    return render_template("signup.html")
+
+
+@app.route("/api/signup", methods=["POST"])
+def api_signup():
+    if not SIGNUP_ENABLED:
+        abort(404)
+    key = ("signup", request.remote_addr)
+    if too_many(key, 30, 3600):
+        return jsonify(error="Too many sign-up attempts. Try again in an hour."), 429
+    record(key)
+
+    data = request.get_json(silent=True) or {}
+    roll_no = (data.get("roll_no") or "").strip()
+    name = (data.get("name") or "").strip()
+    department = (data.get("department") or "").strip()
+    password = data.get("password") or ""
+    if not roll_no or not name:
+        return jsonify(error="Roll number and name are required."), 400
+    if len(password) < 8:
+        return jsonify(error="Choose a password with at least 8 characters."), 400
+    if db.get_student_by_roll(roll_no):
+        return jsonify(error="That roll number is already registered. Ask your administrator if this is a mistake."), 409
+
+    faces = _face_crops(data.get("images", []))
+    if len(faces) < MIN_SAMPLES:
+        return jsonify(error=f"Only {len(faces)} usable face images captured "
+                             f"(need {MIN_SAMPLES}). Improve lighting and face the camera."), 422
+    probe = fe.recognize_face_crop(faces[len(faces) // 2])
+    if probe["status"] == "match":
+        return jsonify(error="This face is already registered. Ask your administrator for help."), 409
+
+    if fe.match_among(faces[len(faces) // 2], [s["id"] for s in db.list_students("pending")]):
+        return jsonify(error="A sign-up with this face is already waiting for approval."), 409
+
+    # Saved as pending: the face is NOT used for attendance until an admin approves it.
+    sid = db.add_student(roll_no, name, department,
+                         password_hash=generate_password_hash(password), status="pending")
+    fe.save_samples(sid, faces)
+    return jsonify(ok=True, student_id=sid)
+
+
+@app.route("/student/login", methods=["GET", "POST"])
+def student_login():
+    if request.method == "POST":
+        roll_no = request.form.get("roll_no", "").strip()
+        key = ("student", request.remote_addr, roll_no.lower())
+        if too_many(key, 5, 300):
+            flash("Too many failed attempts. Wait 5 minutes and try again.", "error")
+            return render_template("student_login.html"), 429
+        student = db.get_student_by_roll(roll_no)
+        if student and student["password_hash"] and check_password_hash(
+                student["password_hash"], request.form.get("password", "")):
+            _attempts.pop(key, None)
+            session.pop("admin", None)
+            session["student"] = student["id"]
+            session.permanent = True
+            return redirect(url_for("me"))
+        record(key)
+        flash("Roll number or password is incorrect.", "error")
+    return render_template("student_login.html")
+
+
+@app.route("/student/logout")
+def student_logout():
+    session.pop("student", None)
+    return redirect(url_for("scan"))
+
+
+@app.route("/me")
+@student_required
+def me(student):
+    return render_template("me.html", student=student)
+
+
+@app.route("/api/me/status")
+@student_required
+def api_me_status(student):
+    month = datetime.now().strftime("%Y-%m")
+    present, total = db.student_month(student["id"], month)
+    return jsonify(
+        status=student["status"],
+        name=student["name"],
+        today=db.student_today(student["id"]),
+        month={"present": present, "total": total,
+               "percentage": round(100 * present / total, 1) if total else 0.0},
+        history=db.student_history(student["id"]),
+    )
+
+
+# ---------------- admin: approve sign-ups, live data ----------------
+@app.route("/signups")
+@login_required
+def signups():
+    return render_template("signups.html", pending=db.list_students("pending"))
+
+
+@app.route("/signups/<int:student_id>/approve", methods=["POST"])
+@login_required
+def approve_signup(student_id):
+    student = db.get_student(student_id)
+    if student and student["status"] == "pending":
+        db.set_status(student_id, "approved")
+        fe.train(db.approved_ids())
+        flash(f"{student['name']} approved. Their face will now be recognised.", "ok")
+    return redirect(url_for("signups"))
+
+
+@app.route("/signups/<int:student_id>/reject", methods=["POST"])
+@login_required
+def reject_signup(student_id):
+    student = db.get_student(student_id)
+    if student and student["status"] == "pending":
+        db.delete_student(student_id)
+        fe.delete_samples(student_id)
+        flash(f"Sign-up from {student['name']} rejected and deleted.", "ok")
+    return redirect(url_for("signups"))
+
+
+@app.route("/students/<int:student_id>/photo")
+@login_required
+def student_photo(student_id):
+    path = fe.sample_path(student_id)
+    if not path:
+        abort(404)
+    resp = send_file(path, mimetype="image/png")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/api/admin/live")
+@login_required
+def api_admin_live():
+    today = datetime.now().strftime("%Y-%m-%d")
+    return jsonify(
+        stats=db.dashboard_stats(),
+        recent=[{"time": r["time"], "roll_no": r["roll_no"], "name": r["name"]}
+                for r in db.attendance_for_date(today)],
+    )
 
 
 # ---------------- reports ----------------
