@@ -1,13 +1,16 @@
-{% extends "base.html" %}
+{% extends "auth_base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Admin sign in{% endblock %}
-{% block content %}
-<div class="panel narrow">
-  <h1 style="margin-bottom:6px">Admin sign in</h1>
-  <p class="muted" style="margin-bottom:22px">Manage students and view attendance reports.</p>
+{% block top_link %}Student? <a href="{{ url_for('student_login') }}">Sign in here</a>{% endblock %}
+{% block card %}
+  <h1>Welcome back!</h1>
+  <p class="lead">Sign in to manage students and attendance.</p>
   <form method="post" class="form">
-    <label>Username <input name="username" required autofocus autocomplete="username"></label>
-    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
-    <button class="btn" type="submit">Sign in</button>
+    <div class="field"><label for="u">Username</label>
+      <div class="control">{{ icon('user') }}<input id="u" name="username" placeholder="Enter your username" required autofocus autocomplete="username"></div></div>
+    <div class="field"><label for="p">Password</label>
+      <div class="control">{{ icon('lock') }}<input id="p" type="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
+        <button class="eye" type="button" data-for="p" aria-label="Show password">{{ icon('eye') }}</button></div></div>
+    <button class="btn block" type="submit">Sign in</button>
   </form>
-</div>
 {% endblock %}
