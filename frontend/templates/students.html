@@ -2,7 +2,8 @@
 {% block title %}Students{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Students</h1><p>{{ students|length }} registered</p></div>
-  <a class="btn" href="{{ url_for('register') }}">Register a student</a></div>
+  <div class="inline"><a class="btn ghost" href="{{ url_for('signups') }}">Sign-ups{% if pending_count %} ({{ pending_count }}){% endif %}</a>
+  <a class="btn" href="{{ url_for('register') }}">Register a student</a></div></div>
 <section class="panel">
   <div class="table-wrap">
   <table class="table">
