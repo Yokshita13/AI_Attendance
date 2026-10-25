@@ -1,0 +1,16 @@
+{% extends "auth_base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Student sign in{% endblock %}
+{% block top_link %}{% if signup_enabled %}New here? <a href="{{ url_for('signup') }}">Create an account</a>{% endif %}{% endblock %}
+{% block card %}
+  <h1>Welcome back!</h1>
+  <p class="lead">Sign in to see your attendance and approval status.</p>
+  <form method="post" class="form">
+    <div class="field"><label for="r">Roll number</label>
+      <div class="control">{{ icon('id') }}<input id="r" name="roll_no" placeholder="Enter your roll number" required autofocus autocomplete="username"></div></div>
+    <div class="field"><label for="p">Password</label>
+      <div class="control">{{ icon('lock') }}<input id="p" type="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
+        <button class="eye" type="button" data-for="p" aria-label="Show password">{{ icon('eye') }}</button></div></div>
+    <button class="btn block" type="submit">Sign in</button>
+  </form>
+{% endblock %}

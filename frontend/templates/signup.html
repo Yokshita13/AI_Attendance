@@ -1,0 +1,74 @@
+{% extends "auth_base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Create student account{% endblock %}
+{% block auth_class %}wide{% endblock %}
+{% block hero_title %}Create Your Account{% endblock %}
+{% block hero_text %}Join SmartAttend for a faster, smarter and more secure way to take attendance.{% endblock %}
+{% block top_link %}Already have an account? <a href="{{ url_for('student_login') }}">Sign in</a>{% endblock %}
+{% block card %}
+  <h1>Student sign-up</h1>
+  <p class="lead">Fill in your details, then capture your face. An administrator approves your account before the camera recognises you.</p>
+  <form id="form" class="form two">
+    <div class="field"><label for="name">Full name</label>
+      <div class="control">{{ icon('user') }}<input id="name" placeholder="Enter your full name" required autocomplete="name"></div></div>
+    <div class="field"><label for="roll">Roll number</label>
+      <div class="control">{{ icon('id') }}<input id="roll" placeholder="Enter your roll number" required autocomplete="off"></div></div>
+    <div class="field full"><label for="dept">Department or class</label>
+      <div class="control">{{ icon('cap') }}<input id="dept" placeholder="For example, BCA 2nd year" autocomplete="off"></div></div>
+    <div class="field"><label for="pw">Password</label>
+      <div class="control">{{ icon('lock') }}<input id="pw" type="password" minlength="8" placeholder="At least 8 characters" required autocomplete="new-password">
+        <button class="eye" type="button" data-for="pw" aria-label="Show password">{{ icon('eye') }}</button></div></div>
+    <div class="field"><label for="pw2">Repeat password</label>
+      <div class="control">{{ icon('lock') }}<input id="pw2" type="password" minlength="8" placeholder="Type it again" required autocomplete="new-password"></div></div>
+    <div class="full">
+      <div class="cam" id="cam" data-state="idle">
+        <div class="cam-view"><video id="video" autoplay playsinline muted></video><i class="frame"></i><span class="live">Live</span></div>
+        <div class="meter"><i id="meter"></i></div>
+        <div class="cam-bar">{{ icon('camera') }}<span id="count">Fill in your details, then start the capture.</span></div>
+      </div>
+      <p class="hint">Keep your face well lit and slowly turn your head a little to the left and right. Remove masks and sunglasses.</p>
+    </div>
+    <div class="full"><button class="btn block" id="go" type="submit">Capture face and sign up</button></div>
+  </form>
+  <div id="msg" class="notice" hidden role="status"></div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='camera.js') }}"></script>
+<script>
+const TOTAL = 20, GAP_MS = 400;
+const $ = id => document.getElementById(id);
+const video = $('video'), cam = $('cam'), msg = $('msg'), count = $('count'), go = $('go');
+function show(t, cls) { msg.hidden = false; msg.textContent = t; msg.className = 'notice ' + cls; }
+
+Cam.start(video).catch(() => show('Camera is blocked. Allow camera access in the address bar and reload. The page must be opened over HTTPS.', 'bad'));
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  if ($('pw').value !== $('pw2').value) { show('The two passwords do not match.', 'bad'); return; }
+  go.disabled = true; msg.hidden = true; cam.dataset.state = 'ok';
+  const images = [];
+  for (let i = 0; i < TOTAL; i++) {
+    images.push(Cam.grab(video, 0.9));
+    $('meter').style.width = ((i + 1) / TOTAL * 100) + '%';
+    count.textContent = `Captured ${i + 1} of ${TOTAL}. Keep your face inside the frame.`;
+    await new Promise(r => setTimeout(r, GAP_MS));
+  }
+  count.textContent = 'Sending your sign-up…';
+  const res = await fetch('/api/signup', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ roll_no: $('roll').value, name: $('name').value, department: $('dept').value,
+                           password: $('pw').value, images })
+  });
+  const d = await res.json();
+  if (res.ok) {
+    show('Account created. An administrator must approve it before the camera can recognise you. Sign in to see your status.', 'ok');
+    count.textContent = 'Done.'; e.target.reset();
+  } else {
+    show(d.error || 'Sign-up failed. Try again.', 'bad');
+    cam.dataset.state = 'bad'; count.textContent = 'Nothing was saved.';
+  }
+  setTimeout(() => { cam.dataset.state = 'idle'; $('meter').style.width = '0'; }, 2500);
+  go.disabled = false;
+});
+</script>
+{% endblock %}

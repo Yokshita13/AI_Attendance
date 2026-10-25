@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}My attendance{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 id="hello">{{ student.name }}</h1>
+  <p>Roll number {{ student.roll_no }}{% if student.department %} · {{ student.department }}{% endif %}</p></div></div>
+
+<section class="hero">
+  <p class="today-line" id="headline">Loading…</p>
+  <p class="muted" id="subline" style="margin-top:10px"></p>
+</section>
+
+<div class="split">
+  <section class="panel">
+    <h2>This month</h2>
+    <p class="today-line" style="font-size:clamp(26px,3.4vw,36px)" id="month">—</p>
+    <div class="split-bar" style="max-width:none"><i id="monthbar" style="width:0%"></i></div>
+    <p class="hint" id="monthnote"></p>
+  </section>
+  <section class="panel">
+    <h2>Recent days present</h2>
+    <ul class="ledger" id="history"><li class="empty">Loading…</li></ul>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function load() {
+  let d;
+  try { const r = await fetch('/api/me/status'); if (r.status === 401) { location.href = '/student/login'; return; } d = await r.json(); }
+  catch (e) { $('subline').textContent = 'Cannot reach the server. Retrying…'; return; }
+  if (d.status === 'pending') {
+    $('headline').innerHTML = 'Waiting for <b>approval</b>.';
+    $('subline').textContent = 'An administrator needs to approve your account. This page updates by itself once they do.';
+  } else if (d.today) {
+    $('headline').innerHTML = 'You are <b>present</b> today.';
+    $('subline').textContent = 'Marked at ' + d.today.slice(0, 5) + '.';
+  } else {
+    $('headline').innerHTML = 'Not marked <b>yet</b> today.';
+    $('subline').textContent = 'Look at the attendance camera to be marked present.';
+  }
+  const m = d.month;
+  $('month').textContent = m.total ? `${m.present} of ${m.total} days (${m.percentage}%)` : 'No attendance taken yet this month';
+  $('monthbar').style.width = m.percentage + '%';
+  $('monthbar').parentElement.hidden = !m.total;
+  $('monthnote').textContent = m.total ? (m.percentage >= 75 ? 'You are above the 75% line.' : 'You are below the 75% line.') : '';
+  $('history').innerHTML = d.history.length
+    ? d.history.map(h => `<li><time>${esc(h.date.slice(5).split('-').reverse().join('/'))}</time><span class="roll">${esc(h.time.slice(0, 5))}</span><span class="name">Present</span></li>`).join('')
+    : '<li class="empty">No days recorded yet.</li>';
+}
+load(); setInterval(load, 5000);
+</script>
+{% endblock %}

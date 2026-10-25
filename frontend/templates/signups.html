@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Sign-ups{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Sign-ups waiting for approval</h1>
+  <p>Check that the photo matches the name before approving. Approved students are recognised by the camera straight away.</p></div></div>
+<section class="panel">
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Photo</th><th>Roll no</th><th>Name</th><th>Department</th><th>Signed up</th><th></th></tr></thead>
+    <tbody>
+    {% for s in pending %}
+      <tr>
+        <td><img class="face" src="{{ url_for('student_photo', student_id=s.id) }}" alt="Captured face of {{ s.name }}" width="64" height="64"></td>
+        <td>{{ s.roll_no }}</td><td><b>{{ s.name }}</b></td><td>{{ s.department }}</td><td>{{ s.created_at[:16].replace('T', ' ') }}</td>
+        <td><div class="inline">
+          <form method="post" action="{{ url_for('approve_signup', student_id=s.id) }}"><button class="btn small">Approve</button></form>
+          <form method="post" action="{{ url_for('reject_signup', student_id=s.id) }}"
+                onsubmit="return confirm('Reject and delete the sign-up from {{ s.name|e }}?')"><button class="btn danger small">Reject</button></form>
+        </div></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty-cell">No sign-ups are waiting.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+// Refresh the list every 10 seconds so new sign-ups show up without reloading.
+setInterval(async () => {
+  if (document.hidden) return;
+  const html = await (await fetch(location.href)).text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const next = doc.querySelector('tbody'), cur = document.querySelector('tbody');
+  if (next && cur && next.innerHTML !== cur.innerHTML) cur.innerHTML = next.innerHTML;
+}, 10000);
+</script>
+{% endblock %}
