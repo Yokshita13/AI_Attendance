@@ -1,27 +1,27 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Today</h1><p>{{ today }}</p></div>
+<div class="page-head"><div><h1>Dashboard</h1><p>Live attendance for {{ today }}. This page updates by itself.</p></div>
   <a class="btn" href="{{ url_for('scan') }}">Take attendance</a></div>
 
-<section class="hero">
-  {% if stats.total %}
-    <p class="today-line"><b>{{ stats.present }}</b> of {{ stats.total }} students are in.</p>
-    <div class="split-bar" role="img" aria-label="{{ stats.present }} present, {{ stats.absent }} absent">
-      <i style="width: {{ stats.rate }}%"></i>
-    </div>
-    <div class="legend"><span>{{ stats.present }} present ({{ stats.rate }}%)</span><span class="absent">{{ stats.absent }} absent</span></div>
-  {% else %}
-    <p class="today-line">No students yet.</p>
-    <p class="muted" style="margin:12px 0 18px">Register your first student to start taking attendance.</p>
-    <a class="btn" href="{{ url_for('register') }}">Register a student</a>
-  {% endif %}
-</section>
+<div class="stats">
+  <div class="stat"><span class="stat-ico c-brand">{{ icon('users') }}</span><div><b id="statTotal">{{ stats.total }}</b><small>Students</small></div></div>
+  <div class="stat"><span class="stat-ico c-ok">{{ icon('check') }}</span><div><b id="statPresent">{{ stats.present }}</b><small>Present today</small></div></div>
+  <div class="stat"><span class="stat-ico c-bad">{{ icon('away') }}</span><div><b id="statAbsent">{{ stats.absent }}</b><small>Absent today</small></div></div>
+  <div class="stat"><span class="stat-ico c-warn">{{ icon('trend') }}</span><div><b id="statRate">{{ stats.rate }}%</b><small>Attendance rate</small></div></div>
+</div>
+
+{% if not stats.total %}
+<section class="panel callout"><h2>No students yet</h2>
+  <p class="muted">Register your first student to start taking attendance.</p>
+  <a class="btn" href="{{ url_for('register') }}">Register a student</a></section>
+{% endif %}
 
 <div class="split">
   <section class="panel">
     <h2>Checked in today</h2>
-    <ul class="ledger">
+    <ul class="ledger" id="recent">
       {% for r in recent %}
         <li><time>{{ r.time[:5] }}</time><span class="roll">{{ r.roll_no }}</span><span class="name">{{ r.name }}</span></li>
       {% else %}<li class="empty">No one has checked in yet today.</li>{% endfor %}
@@ -39,4 +39,30 @@
     {% else %}<p class="empty">Days will appear here once attendance has been taken.</p>{% endif %}
   </section>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let known = new Set([...document.querySelectorAll('#recent .roll')].map(e => e.textContent));
+async function live() {
+  if (document.hidden) return;
+  let d;
+  try { const r = await fetch('/api/admin/live'); if (!r.ok) return; d = await r.json(); } catch (e) { return; }
+  const s = d.stats;
+  $('statTotal').textContent = s.total;
+  $('statPresent').textContent = s.present;
+  $('statAbsent').textContent = s.absent;
+  $('statRate').textContent = s.rate + '%';
+  $('recent').innerHTML = d.recent.length
+    ? d.recent.map(r => `<li class="${!known.has(r.roll_no) ? 'fresh' : ''}"><time>${esc(r.time.slice(0, 5))}</time><span class="roll">${esc(r.roll_no)}</span><span class="name">${esc(r.name)}</span></li>`).join('')
+    : '<li class="empty">No one has checked in yet today.</li>';
+  known = new Set(d.recent.map(r => r.roll_no));
+  for (const id of ['pendingBadge', 'bellBadge']) {
+    const badge = document.getElementById(id);
+    if (badge) { badge.textContent = s.pending; badge.hidden = !s.pending; }
+  }
+}
+setInterval(live, 3000);
+</script>
 {% endblock %}
